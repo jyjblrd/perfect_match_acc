@@ -2,14 +2,13 @@ import re
 import xlrd
 from xlwt import Workbook
 
-#asd Defining variables
+# Defining variables
 row = 1
 col = 9
 comment = []
 comments = []
 extracted_comments = []
 
-#tsdasdest
 # Proximity to ski field
 prox1 = ["ski slope", "ski field", "lifts", "gondola"]
 prox2 = ["connect", "proximity", "minute", "walk", "locat", "bus", "close",
