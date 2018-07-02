@@ -1,0 +1,29 @@
+import re
+import xlrd
+from xlwt import Workbook
+
+#Defining variables
+row = 1
+col = 9
+comments = []
+
+#Proximity to ski field
+prox1 = ["ski slope", "ski field", "lifts", "gondola"]
+prox2 = ["connect", "proximity", "minute"]
+
+#Excel spreadsheet setup
+wb = Workbook()
+workbook = xlrd.open_workbook("/home/j_blrd/webscraping/spreadsheets/comments.xls")
+data_sheet = wb.add_sheet("commentExtraction", cell_overwrite_ok=True)
+sheet = workbook.sheet_by_index(0) #Open first sheet
+
+while True:
+	while True:
+		if not sheet.cell_value(row, col):
+			break
+		comment = sheet.cell_value(row, col).split("||")[7].split(".") #Gets the actual comment from the spreadsheet and seperates the sentences
+		comments.append(comment)
+		col += 1
+	print(comments)
+
+#	if any(x in comments for x in prox1) and any(x in comments for x in prox2):
