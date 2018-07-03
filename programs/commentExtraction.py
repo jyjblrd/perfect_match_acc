@@ -7,7 +7,8 @@ row = 1
 col = 9
 comment = []
 comments = []
-extracted_comments = []
+tmp_comment_list = []
+prox_comments = {}
 
 # Proximity to ski field
 prox1 = ["ski slope", "ski field", "lifts", "gondola"]
@@ -92,13 +93,19 @@ def clearVariables():
     global comment
     global comments
     global col
+    global tmp_comment_list
 
     comment = []
     comments = []
     col = 9
+    tmp_comment_list = []
 
 while True:
     print("\n", row)
+
+    hotel_name = sheet.cell_value(row, 0)
+    print(hotel_name)
+
     if sheet.cell_type(row, col) in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
         row += 1
         continue
@@ -117,8 +124,10 @@ while True:
     for i in range(0, len(comments)): #Repeat for each comment in the list
         if any(word in comments[i] for word in prox1):
             if any(x in comments[i] for x in prox2):
-                extracted_comments.append(comments[i])
+                tmp_comment_list.append(comments[i])
+
+    prox_comments[hotel_name] = tmp_comment_list
 
     row +=1
     clearVariables()
-#    print(extracted_comments)
+print(prox_comments)
