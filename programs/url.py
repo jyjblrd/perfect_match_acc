@@ -10,9 +10,10 @@ i = 0
 url_list = []
 
 # Sqlite database initialization
-conn = sqlite3.connect("/home/j_blrd/webscraping/database/urls.db")
+conn = sqlite3.connect("/home/j_blrd/webscraping/database/database.db")
 c = conn.cursor()
 c.execute("CREATE TABLE IF NOT EXISTS urls(url TEXT)")
+c.execute("DELETE FROM urls")
 
 print("Hotel URLs:")
 
@@ -45,9 +46,6 @@ while(True):
         page = nextPageURL
     i = i + 1
     print(i)
-
-    if(i > 14):
-        break
 
 c.close
 conn.close()
