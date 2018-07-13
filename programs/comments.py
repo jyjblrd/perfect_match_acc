@@ -11,14 +11,13 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
-from xlwt import Workbook
-import xlrd
 import urllib.request
 import os
 import re
 import time
 import sys
 import cProfile
+import sqlite3
 
 #Selenium with Firefox driver setup
 options = Options()
@@ -32,9 +31,7 @@ driver = webdriver.Firefox(firefox_profile, firefox_binary=binary, firefox_optio
 Wait = WebDriverWait(driver, 1.5)
 
 #Defining variables
-row = 1
-spreadsheet_row = 1
-col = 2
+iteration = 0
 element = ""
 elements = ""
 no_reviews = False
@@ -43,22 +40,11 @@ error_count = 0
 page_num = 1
 max_num_of_reviews = 0
 
-#Excel spreadsheet setup
-wb = Workbook()
-workbook = xlrd.open_workbook("/home/j_blrd/webscraping/spreadsheets/urls.xls")
-data_sheet = wb.add_sheet("comments", cell_overwrite_ok=True)
-sheet = workbook.sheet_by_index(0) #Open first sheet
-
-#Write the header of the spreadsheet
-data_sheet.write(0, 0, "Hotel Name")
-data_sheet.write(0, 1, "Overall Rating")
-data_sheet.write(0, 2, "Cleanliness Score")
-data_sheet.write(0, 3, "Comfort Score")
-data_sheet.write(0, 4, "Location Score")
-data_sheet.write(0, 5, "Facilities Score")
-data_sheet.write(0, 6, "Staff Score")
-data_sheet.write(0, 7, "Value Score")
-data_sheet.write(0, 8, "Wifi Score")
+#Sqlite setup
+conn = sqlite.connect("/home/j_blrd/webscraping/database/database.db")
+c = conn.cursor()
+c.execute("CREATE TABLE IF NOT EXISTS comments\
+          (hotel_name TEXT, overall TEXT, cleanliness TEXT, comfort TEXT, location TEXT, facilities TEXT, staff TEXT, value TEXT, wifi TEXT)")
 
 #Set all variables to nothing to prevent previous hotel's info bleeding into next hotel
 def clearVariables():
@@ -163,10 +149,14 @@ def getElementsXpath(name, xpath):
     except:
         print("Failed to find " + name)
 
+#Get the hotel urls from the database
+c.execute("SELECT url FROM urls") #Selects the urls in database
+hotel_urls = c.fetchall()
+
 #Main loop
 while(True):
     if(page_num == 1): #get the hotel name, rating, ect is only needed once
-        hotel_url = sheet.cell_value(row, 0) #Get the hotel url
+        hotel_url = hotel_urls[iteration] #Gets the next hotel url
         hotel_name = hotel_url[:-10][33:] #Get rid of everything in the url but the hotel name
         comment_url = "https://www.booking.com/reviews/jp/hotel/" + hotel_name #Splice hotel name onto url
         driver.get(comment_url) #Get Page
@@ -177,11 +167,10 @@ while(True):
         print(name)
 
         getElement("overall rating", "#review_list_score > span > span")
-        if(no_element == True): #If there is no overall rating it just skips it
+        if(no_element == True): #If there is no overall rating it just skips the hotel
             no_element = False
-            row += 1
-            print(row)
-            wb.save("/home/j_blrd/webscraping/spreadsheets/comments.xls")
+            iteration += 1
+            print(iteration)
             continue
 
         overall_rating = element
@@ -190,33 +179,17 @@ while(True):
 
         getElements("individual rating", "p.review_score_value")
         individual_ratings = [x.text for x in elements]
-        try:
-            cleanliness, comfort, location, facilities, staff, value, wifi = individual_ratings #Seperate list into individual items#Write the data to the spreadsheet
-            data_sheet.write(spreadsheet_row, 0, name)
-            data_sheet.write(spreadsheet_row, 1, overall_rating)
-            data_sheet.write(spreadsheet_row, 2, cleanliness)
-            data_sheet.write(spreadsheet_row, 3, comfort)
-            data_sheet.write(spreadsheet_row, 4, location)
-            data_sheet.write(spreadsheet_row, 5, facilities)
-            data_sheet.write(spreadsheet_row, 6, staff)
-            data_sheet.write(spreadsheet_row, 7, value)
-            data_sheet.write(spreadsheet_row, 8, wifi)
-        except Exception as e:
-            print(e)
-            try: #Try again without wifi because some places dont have a wifi score
-                cleanliness, comfort, location, facilities, staff, value = individual_ratings
-                data_sheet.write(spreadsheet_row, 0, name)
-                data_sheet.write(spreadsheet_row, 1, overall_rating)
-                data_sheet.write(spreadsheet_row, 2, cleanliness)
-                data_sheet.write(spreadsheet_row, 3, comfort)
-                data_sheet.write(spreadsheet_row, 4, location)
-                data_sheet.write(spreadsheet_row, 5, facilities)
-                data_sheet.write(spreadsheet_row, 6, staff)
-                data_sheet.write(spreadsheet_row, 7, value)
-                print("No Wifi Score")
-            except Exception as e:
-                print(e)
-                print("problem while finding individual scores of hotel")
+        if(len(individual_ratings) == 8):
+            c.executemany("INSERT INTO comments \
+                (hotel_name, overall, cleanliness, comfort, location, facilities, staff, value, wifi) \
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", individual_ratings)
+
+        elif(len(individual_ratings) == 7): #Some hotels dont have a wifi score
+            print("no wifi score")
+            c.executemany("INSERT INTO comments \
+                (hotel_name, overall, cleanliness, comfort, location, facilities, staff, value) \
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)", individual_ratings)
+
         #print(individual_ratings) #Debugging only, slows down program a bit
         elements = ""
 
@@ -262,12 +235,13 @@ while(True):
         elements = ""
 
         for a in range(0, num_of_reviews):
-            reviewer_info[a] = ["||".join(str(x) for x in reviewer_info[a])] #Convert reviewer info list into string with || seperating elements
-            data_sheet.write(spreadsheet_row, a + 9 + ((page_num-1)*75), reviewer_info[a]) #Write the reviewer info to the spreadsheet. +75 columns for each page
-            #print(reviewer_info[a]) #Print collected data (for debugging only. Slows down program because it has to print so much
+            c.execute(CREATE TABLE IF NOT EXISTS
+#            print(reviewer_info[a]) #Print collected data (for debugging only. Slows down program because it has to print so much
+
+        c.executemany("INSERT INTO comments VALUES (
 
     try: #Try to get next page of reviews
-        driver.find_element_by_css_selector("div.review_list_pagination:nth-child(4) > p:nth-child(2) > a:nth-child(1)").click()
+            driver.find_element_by_css_selector("div.review_list_pagination:nth-child(4) > p:nth-child(2) > a:nth-child(1)").click()
         clearVariables()
         page_num += 1 #Next page
     except: #Move onto next page
