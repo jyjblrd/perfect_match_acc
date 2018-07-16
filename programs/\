@@ -45,24 +45,21 @@ page_num = 1
 max_num_of_reviews = 0
 
 #Sqlite setup
-conn = sqlite3.connect("/home/j_blrd/webscraping/database/database.db")
+conn = sqlite.connect("/home/j_blrd/webscraping/database/database.db")
 c = conn.cursor()
 c.execute("CREATE TABLE IF NOT EXISTS unfiltered_guest_comments\
           (location_id int, property_id int, review_site_id int, date text, comment text)")
 c.execute("CREATE TABLE IF NOT EXISTS property_master_table\
           (location_id int, property_id int, property_name text, property_webadress text, hotel, self_contained)")
-c.execute("CREATE TABLE IF NOT EXISTS sequence_tracker\
-          (name text, seq int)")
 c.execute("SELECT * FROM location_master_table")
 
 #Get Url
-print("\n" + "\n".join(str(s).replace("(", "").replace(")", "").replace("'", "").replace(",", "|") for s in c.fetchall()))  # Get location list
-dest_name = input("Select location name from list above:\n")
+print("\n".join(str(s).replace("(", "").replace(")", "").replace("'", "").replace(",", "|") for s in c.fetchall()))
+dest_name = input("Select location name")
 page = "https://www.booking.com/searchresults.en-gb.html?lang=en-gb&ss={}".format(dest_name)
-c.execute("SELECT location_id FROM location_master_table WHERE location_name = '{}'".format(dest_name))
-location_id = int(c.fetchone()[0])
+c.execute("SELECT location_id FROM location_master_table WHERE location_name = {}".format(dest_name))
+location_id = c.fetchall()
 print(location_id)
-
 
 #Set all variables to nothing to prevent previous hotel's info bleeding into next hotel
 def clearVariables():
@@ -114,43 +111,25 @@ def clearVariables():
     no_reviews = False
     no_element = False
 
-
 #Setup to get rid of the stupid emojies
 emoji_pattern = re.compile("["
-                           u"\U0001F600-\U0001F64F"  # emoticons
-                           u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-                           u"\U0001F680-\U0001F6FF"  # transport & map symbols
-                           u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
-                           "]+", flags=re.UNICODE)
+               u"\U0001F600-\U0001F64F"  # emoticons
+               u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+               u"\U0001F680-\U0001F6FF"  # transport & map symbols
+               u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+               "]+", flags=re.UNICODE)
 
 #Get Url
 print("Getting Urls")
-print("Page:")
 previous_urls = {}
-previous_urls = set()
 hotel_urls = []
-i = 0
-a = 0
-hotel_names = []
-names_in_db = {}
-names_in_db = set()
 
-c.execute("SELECT property_name FROM property_master_table WHERE location_id = ?", (location_id,))
-names_in_db_raw = c.fetchall()
-
-for row in names_in_db_raw:
-    names_in_db.add(row[0])
-print(names_in_db)
 while(True):
     source = urllib.request.urlopen(page)
-    soup = bs.BeautifulSoup(source, "lxml")
-
-    for hotel_name in soup.find_all("span", class_="sr-hotel__name"):
-        hotel_name = (hotel_name.text.replace("\n", ""))
-        hotel_names.append(hotel_name)
+    soup = bs.BeautifulSoup(source,"lxml")
 
     for hotelURL in soup.find_all("a", href=True, class_="hotel_name_link url"):
-        hotelURLs = ("https://www.booking.com" + hotelURL["href"])
+        hotelURLs = ("https://www.booking.com"+hotelURL["href"])
         hotelURL1, hotelURL2 = hotelURLs.split(".com")
         hotelURL2, hotelURL3 = hotelURL2.split("#")
         hotelURL2 = hotelURL2[:-1] + "#"
@@ -158,12 +137,11 @@ while(True):
         hotelURL2 = hotelURL2[1:]
         hotelURLs = hotelURL1 + hotelURL2 + hotelURL3
         shortened_url = hotelURLs.split(".html")[0]
-        if shortened_url not in previous_urls and hotel_names[a] not in names_in_db:
+        if(shortened_url not in previous_urls):
             previous_urls.add(shortened_url)
             hotel_urls.append(hotelURLs)
-            print(hotelURLs)
-
-        a += 1
+            new_urls += 1
+#        print(hotelURLs)
 
     for nextPage in soup.find_all("a", href=True, class_="paging-next"):
         nextPageURL = (nextPage["href"])
@@ -175,12 +153,9 @@ while(True):
         page = nextPageURL
     i = i + 1
     print(i)
-i = 0  # Dont resue variables like me
-print("New hotels in " + dest_name + " " + str(len(hotel_urls)))
+print(hotel_urls)
 
 #Get element from page with css selector function
-
-
 def getElement(name, css_selector):
     global driver
     global element
@@ -188,25 +163,21 @@ def getElement(name, css_selector):
     try:
         Wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, css_selector)))
         element = driver.find_element_by_css_selector(css_selector).text
-    except BaseException:
+    except:
         print("Failed to find " + name)
         no_element = True
 
 #Get element from page with xpath function
-
-
 def getElementXpath(name, xpath):
     global driver
     global element
     try:
         Wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
         element = driver.find_element_by_xpath(xpath).text
-    except BaseException:
+    except:
         print("Failed to find " + name)
 
 #Get multiple elements from page with css selector function
-
-
 def getElements(name, css_selector):
     global driver
     global elements
@@ -214,63 +185,40 @@ def getElements(name, css_selector):
     try:
         Wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, css_selector)))
         elements = driver.find_elements_by_css_selector(css_selector)
-    except BaseException:
+    except:
         print("Failed to find " + name)
-        if(name == "review date"):  # If it cant find reviews, it skips over the hotel
+        if(name == "reviewer info"): #If it cant find reviews, it skips over the hotel
             no_reviews = True
 
 #Get multiple elements from page with xpath function
-
-
 def getElementsXpath(name, xpath):
     global driver
     global elements
     try:
         Wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
         elements = driver.find_elements_by_xpath(xpath)
-    except BaseException:
+    except:
         print("Failed to find " + name)
-
 
 #Main loop
 while(True):
-    #startup stuff
-    conn.commit()
-    clearVariables()
+    if(page_num == 1): #get the hotel name, rating, ect is only needed once
+        hotel_url = hotel_urls[iteration] #Gets the next hotel url
+        hotel_name = hotel_url[:-10][33:] #Get rid of everything in the url but the hotel location_id, name
+        comment_url = "https://www.booking.com/reviews/jp/hotel/" + hotel_name #Splice hotel name onto url
+        driver.get(comment_url) #Get Page
 
-    if(page_num == 1):  # get the hotel name, rating, ect is only needed once
-
-        hotel_url = hotel_urls[iteration]  # Gets the next hotel url
-        hotel_name = hotel_url.split("?")[0].split("/")[-1]
-        country_code = hotel_url.split("?")[0].split("/")[-2]
-
-        driver.get(comment_url)  # Get Page
         getElement("hotel name", ".standalone_header_hotel_link")
         name = element
         element = ""
-        print("\n" + name)
+        print(name)
 
         getElement("overall rating", "#review_list_score > span > span")
-        if no_element is True:  # If there is no overall rating it just skips the hotel
+        if(no_element == True): #If there is no overall rating it just skips the hotel
             no_element = False
             iteration += 1
-            page = 1
+            print(iteration)
             continue
-
-        comment_url = "https://www.booking.com/reviews/" + country_code + "/hotel/" + hotel_name  # Splice hotel name onto url
-
-        sequence_name = "property_master_table_location_" + str(location_id)
-        c.execute("SELECT seq FROM sequence_tracker WHERE name = ?", (sequence_name,))  # Check if sequence already exist
-        entry = c.fetchone()
-
-        if entry is None:
-            c.execute("INSERT INTO sequence_tracker (name, seq) VALUES(?, 1)", (sequence_name,))
-            entry = [0]
-        property_id = int(entry[0]) + 1
-        c.execute("UPDATE sequence_tracker SET seq = ? WHERE name = ?", (property_id, sequence_name))
-
-        c.execute("INSERT INTO property_master_table (location_id, property_id, property_name) VALUES(?, ?, ?)",
-                  (location_id, property_id, name))
 
         overall_rating = element
         element = ""
@@ -279,9 +227,9 @@ while(True):
         getElements("individual rating", "p.review_score_value")
         individual_ratings = [x.text for x in elements]
         if(len(individual_ratings) == 8):
-            pass  # ToDo: add this to the database
+            pass #ToDo: add this to the database
 
-        elif(len(individual_ratings) == 7):  # Some hotels dont have a wifi score
+        elif(len(individual_ratings) == 7): #Some hotels dont have a wifi score
             pass
             #ToDo: same as above
             #print("no wifi score")
@@ -292,47 +240,64 @@ while(True):
         #print(individual_ratings) #Debugging only, slows down program a bit
         elements = ""
 
-        #Find the property_id for property_master_table
-        c.execute("SELECT seq FROM sequence_tracker WHERE name = ?", (sequence_name,))  # Check if sequence already exists
-        entry = c.fetchone()
-
-    getElements("review date", "p.review_item_date")
-    if no_reviews is False:  # If there are no reviews get them
-        review_date = [[x.text[10:]] for x in elements]
-        reviewer_info = review_date
+    print("page: ", page_num)
+    getElements("reviewer info", "div.review_item_reviewer")
+    if(no_reviews == False): #If there are no reviews get them
+        reviewer_info = [x.text for x in elements]
+        reviewer_info = [x.split("\n") for x in reviewer_info] #Split the name, country and num of reviews into seperate parts
+        reviewer = reviewer_info
         elements = ""
-        num_of_reviews = len(reviewer_info)
 
-        ''' #Aparently we dont need this anymore either
+        getElements("review score", "span.review-score-badge")
+        review_score = [x.text for x in elements]
+        del review_score[0] #delete the first element in list because it is the overall score (same css selector)
+        num_of_reviews = len(reviewer_info)
+        for i in range(0, num_of_reviews): #runs as many times as there are reviews on the page.
+            reviewer_info[i].append(review_score[i]) #Add the review score to the list
+        elements = ""
+
+        getElements("review date", "p.review_item_date")
+        review_date = [x.text for x in elements]
+        for i in range(0, num_of_reviews):
+            reviewer_info[i].append(review_date[i]) #Add the review date to the list
+        elements = ""
+
+        getElements("link to review", "a.review_item_header_content")
+        link_to_review = [x.get_attribute("href") for x in elements]
+        for i in range(0, num_of_reviews):
+            reviewer_info[i].append(link_to_review[i]) #Add link to review to the list
+        elements = ""
+
         for i in range(0, num_of_reviews):
             getElementXpath("review title", '//*[@id="review_list_page_container"]/ul/li['+str(i+1)+']/div[4]/div/div[1]/div[2]/a/span')
             review_title = (emoji_pattern.sub(r"", element)) #Gets rid of the emojis that were crashing the program
             element = ""
             reviewer_info[i].append(review_title) #Add the review title to the list
-        '''
 
         getElements("review text", "div.review_item_review_content")
-        review_text = [x.text.replace("눇", "").replace("눉", "").replace("\n", " ").split(" Stayed in ", 1)[0] for x in elements]  # replace the weird unicode and carriage returns
-        review_text = [(emoji_pattern.sub(r"", x)) for x in review_text]  # Gets rid of the emojis
+        review_text = [x.text.replace("눇", "").replace("눉", "").replace("\n", " ").split(" Stayed in ", 1)[0] for x in elements] #replace the weird unicode and carriage returns
+        review_text = [(emoji_pattern.sub(r"", x)) for x in review_text] #Gets rid of the emojis
         for i in range(0, num_of_reviews):
-            reviewer_info[i].append(review_text[i])  # Add review text to the list
+            reviewer_info[i].append(review_text[i]) #Add review text to the list
         elements = ""
 
         for a in range(0, num_of_reviews):
-            c.execute("INSERT INTO unfiltered_guest_comments (location_id, property_id, date, comment) VALUES(?, ?, ?, ?)",
-                      (location_id, property_id, reviewer_info[a][0], reviewer_info[a][1]))
-#            c.execute("INSERT INTO unfiltered_guest_comments (
+           # c.execute("INSERT INTO unfiltered_guest_comments (
 #            print(reviewer_info[a]) #Print collected data (for debugging only. Slows down program because it has to print so much
 
         #c.executemany("INSERT INTO comments VALUES (
 
-    try:  # Try to get next page of reviews
+    try: #Try to get next page of reviews
         driver.find_element_by_css_selector("div.review_list_pagination:nth-child(4) > p:nth-child(2) > a:nth-child(1)").click()
-        page_num += 1  # Next page
-    except BaseException:  # Move onto next page
+        clearVariables()
+        page_num += 1 #Next page
+    except: #Move onto next page
+        c.execute("INSERT INTO property_master_table (location_id, property_name) VALUES(?, ?)", (location_id, name))
+        row += 1
+        spreadsheet_row += 1
+        print("")
+        print("Hotel number ", row)
         page_num = 1
-        iteration += 1
+        clearVariables()
 
-c.close()
-conn.close()
 driver.quit()

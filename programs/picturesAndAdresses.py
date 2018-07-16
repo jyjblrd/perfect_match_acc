@@ -49,7 +49,7 @@ data_sheet.write(0, 3, "Hotel Picture")
 data_sheet.write(0, 4, "Hotle Picture Url")
 
 def clearVariables():
-		
+
 	global element
 	global elements
 	global hotel_website
@@ -57,7 +57,7 @@ def clearVariables():
 	global hotel_url
 	global hotel_url_with_plus
 	global hotel_image_url
-	
+
 	element = ""
 	elements = ""
 	hotel_website = ""
@@ -115,22 +115,22 @@ while(True):
 		hotel_name = hotel_name + " Hakuba"
 	hotel_name_with_plus = hotel_name.replace(" ", "+") #Replace spaces with + so it can be inserted into google url
 	print(hotel_name) #Print Hotel Name
-	
+
 	hotel_url = "https://www.google.com/search?rlla=0&tbm=lcl&hl=en&q=" + hotel_name_with_plus #Splice hotel name onto google maps search url
 	driver.get(hotel_url) #Get Page
-	
+
 	getElementAttribute("hotel's website", "a.yYlJEf.L48Cpd", "href") #Try find hotel's website element
 	hotel_website = element
 	element = ""
 	print(hotel_website)
-	
+
 	getElementAttribute("image of hotel", "div.hDtdnc", "style") #Try get the link to the image of the hotel
 	hotel_image_url = element[23:][:-3]
 	if("https:" in hotel_image_url) != True and hotel_image_url != "": #For some reason some of the url's dont have https: at the beginning so this just adds that
 		hotel_image_url = "https:" + hotel_image_url
 	element = ""
 	print(hotel_image_url)
-	
+
 	if(hotel_image_url != ""): #Get the image from the link only if there is an image
 		urllib.request.urlretrieve(hotel_image_url, "/home/j_blrd/webscraping/imageCache/" + hotel_name + ".png") #Get the link of the image and download it
 		img = Image.open("/home/j_blrd/webscraping/imageCache/" + hotel_name + ".png")
@@ -138,18 +138,18 @@ while(True):
 		img = Image.merge("RGB", (r, g, b))
 		img.save("/home/j_blrd/webscraping/imageCache/" + hotel_name + ".bmp")
 		data_sheet.insert_bitmap("/home/j_blrd/webscraping/imageCache/" + hotel_name + ".bmp", row, 3)
-	
+
 	#Start writing data to spreadsheet
 	data_sheet.write(row, 0, row)
 	data_sheet.write(row, 1, hotel_name)
 	data_sheet.write(row, 2, hotel_website)
 	data_sheet.write(row, 4, hotel_image_url)
-	
+
 	wb.save("/home/j_blrd/webscraping/spreadsheets/imagesAndWebsites.xls")
-	
+
 	print("\n")
 	clearVariables()
 	row += 1
 	print(row)
-	
-	
+
+

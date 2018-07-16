@@ -50,5 +50,5 @@ while(True):
     print(i)
 
 print("New Urls:" + str(new_urls))
-c.close
+c.close()
 conn.close()
