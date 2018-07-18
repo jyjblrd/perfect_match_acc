@@ -11,6 +11,7 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
+from datetime import datetime
 import urllib.request
 import os
 import re
@@ -89,6 +90,7 @@ def clearVariables():
     global review_text
     global no_reviews
     global no_element
+    global newest_date
 
     element = ""
     elements = ""
@@ -113,6 +115,7 @@ def clearVariables():
     review_text = ""
     no_reviews = False
     no_element = False
+    newest_date = ""
 
 
 #Setup to get rid of the stupid emojies
@@ -130,24 +133,11 @@ previous_urls = {}
 previous_urls = set()
 hotel_urls = []
 i = 0
-a = 0
-hotel_names = []
-names_in_db = {}
-names_in_db = set()
+repeat_url = 0
 
-c.execute("SELECT property_name FROM property_master_table WHERE location_id = ?", (location_id,))
-names_in_db_raw = c.fetchall()
-
-for row in names_in_db_raw:
-    names_in_db.add(row[0])
-print(names_in_db)
 while(True):
     source = urllib.request.urlopen(page)
     soup = bs.BeautifulSoup(source, "lxml")
-
-    for hotel_name in soup.find_all("span", class_="sr-hotel__name"):
-        hotel_name = (hotel_name.text.replace("\n", ""))
-        hotel_names.append(hotel_name)
 
     for hotelURL in soup.find_all("a", href=True, class_="hotel_name_link url"):
         hotelURLs = ("https://www.booking.com" + hotelURL["href"])
@@ -158,12 +148,11 @@ while(True):
         hotelURL2 = hotelURL2[1:]
         hotelURLs = hotelURL1 + hotelURL2 + hotelURL3
         shortened_url = hotelURLs.split(".html")[0]
-        if shortened_url not in previous_urls and hotel_names[a] not in names_in_db:
+        if shortened_url not in previous_urls:
             previous_urls.add(shortened_url)
             hotel_urls.append(hotelURLs)
-            print(hotelURLs)
-
-        a += 1
+        else:
+            repeat_url += 1
 
     for nextPage in soup.find_all("a", href=True, class_="paging-next"):
         nextPageURL = (nextPage["href"])
@@ -177,6 +166,7 @@ while(True):
     print(i)
 i = 0  # Dont resue variables like me
 print("New hotels in " + dest_name + " " + str(len(hotel_urls)))
+print("Repeat urls: " + str(repeat_url))
 
 #Get element from page with css selector function
 
@@ -239,10 +229,10 @@ while(True):
     clearVariables()
 
     if(page_num == 1):  # get the hotel name, rating, ect is only needed once
-
         hotel_url = hotel_urls[iteration]  # Gets the next hotel url
         hotel_name = hotel_url.split("?")[0].split("/")[-1]
         country_code = hotel_url.split("?")[0].split("/")[-2]
+        comment_url = "https://www.booking.com/reviews/" + country_code + "/hotel/" + hotel_name  # Splice hotel name onto url
 
         driver.get(comment_url)  # Get Page
         getElement("hotel name", ".standalone_header_hotel_link")
@@ -257,24 +247,33 @@ while(True):
             page = 1
             continue
 
-        comment_url = "https://www.booking.com/reviews/" + country_code + "/hotel/" + hotel_name  # Splice hotel name onto url
-
-        sequence_name = "property_master_table_location_" + str(location_id)
-        c.execute("SELECT seq FROM sequence_tracker WHERE name = ?", (sequence_name,))  # Check if sequence already exist
-        entry = c.fetchone()
-
-        if entry is None:
-            c.execute("INSERT INTO sequence_tracker (name, seq) VALUES(?, 1)", (sequence_name,))
-            entry = [0]
-        property_id = int(entry[0]) + 1
-        c.execute("UPDATE sequence_tracker SET seq = ? WHERE name = ?", (property_id, sequence_name))
-
-        c.execute("INSERT INTO property_master_table (location_id, property_id, property_name) VALUES(?, ?, ?)",
-                  (location_id, property_id, name))
-
         overall_rating = element
         element = ""
         #print(overall_rating) #Debugging only, slows down program a bit
+
+        # Check if hotel is already in db
+        c.execute("SELECT property_id FROM property_master_table WHERE property_name = ? LIMIT 1", (name,))
+        entry = c.fetchone()
+
+        if entry is None:
+            # Sequence counting stuff
+            sequence_name = "property_master_table_location_" + str(location_id)
+            c.execute("SELECT seq FROM sequence_tracker WHERE name = ? LIMIT 1", (sequence_name,))  # Check if sequence already exist
+            entry = c.fetchone()
+
+            if entry is None:
+                c.execute("INSERT INTO sequence_tracker (name, seq) VALUES(?, 1)", (sequence_name,))
+                entry = [0]
+            property_id = int(entry[0]) + 1
+            c.execute("UPDATE sequence_tracker SET seq = ? WHERE name = ?", (property_id, sequence_name))
+
+            # Putting stuff in propeerty_master_table
+            c.execute("INSERT INTO property_master_table (location_id, property_id, property_name) VALUES(?, ?, ?)",
+                      (location_id, property_id, name))
+        else:
+            print("hotel already in db")
+            property_id = int(entry[0])
+            print(property_id)
 
         getElements("individual rating", "p.review_score_value")
         individual_ratings = [x.text for x in elements]
@@ -292,24 +291,20 @@ while(True):
         #print(individual_ratings) #Debugging only, slows down program a bit
         elements = ""
 
-        #Find the property_id for property_master_table
-        c.execute("SELECT seq FROM sequence_tracker WHERE name = ?", (sequence_name,))  # Check if sequence already exists
-        entry = c.fetchone()
+        c.execute("SELECT date FROM unfiltered_guest_comments WHERE location_id = ? AND property_id = ?",
+                  (location_id, property_id))  # Get all dates for the previous comments
+        newest_date = int(max([x[0] for x in c.fetchall()], default = 0))
+
+    print(page_num)
+    print(newest_date)
 
     getElements("review date", "p.review_item_date")
     if no_reviews is False:  # If there are no reviews get them
-        review_date = [[x.text[10:]] for x in elements]
-        reviewer_info = review_date
-        elements = ""
-        num_of_reviews = len(reviewer_info)
+        review_date = [int(time.mktime(datetime.strptime(x.text[10:], "%d %B %Y").timetuple())) for x in elements]  # Converts "16 July 2018" to unix time
+        reviewer_info = [[x] for x in review_date]
+        element = ""
 
-        ''' #Aparently we dont need this anymore either
-        for i in range(0, num_of_reviews):
-            getElementXpath("review title", '//*[@id="review_list_page_container"]/ul/li['+str(i+1)+']/div[4]/div/div[1]/div[2]/a/span')
-            review_title = (emoji_pattern.sub(r"", element)) #Gets rid of the emojis that were crashing the program
-            element = ""
-            reviewer_info[i].append(review_title) #Add the review title to the list
-        '''
+        num_of_reviews = len(reviewer_info)
 
         getElements("review text", "div.review_item_review_content")
         review_text = [x.text.replace("눇", "").replace("눉", "").replace("\n", " ").split(" Stayed in ", 1)[0] for x in elements]  # replace the weird unicode and carriage returns
@@ -317,6 +312,19 @@ while(True):
         for i in range(0, num_of_reviews):
             reviewer_info[i].append(review_text[i])  # Add review text to the list
         elements = ""
+
+        reviewer_info.sort(reverse = True)
+
+        review_date = [x[0] for x in reviewer_info]
+
+        try:
+            target_index = review_date.index(newest_date)
+        except ValueError:
+            target_index = None
+
+        print("Added " + str(target_index) + " new comments")
+        reviewer_info[:target_index]
+
 
         for a in range(0, num_of_reviews):
             c.execute("INSERT INTO unfiltered_guest_comments (location_id, property_id, date, comment) VALUES(?, ?, ?, ?)",
@@ -328,7 +336,11 @@ while(True):
 
     try:  # Try to get next page of reviews
         driver.find_element_by_css_selector("div.review_list_pagination:nth-child(4) > p:nth-child(2) > a:nth-child(1)").click()
-        page_num += 1  # Next page
+        if target_index:
+            page_num = 1
+            iteration += 1
+        else:
+            page_num += 1  # Next page
     except BaseException:  # Move onto next page
         page_num = 1
         iteration += 1
