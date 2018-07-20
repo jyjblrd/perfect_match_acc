@@ -1,6 +1,9 @@
 #Python script to scrape comments for hotels in Hakuba, Japan from booking.com. Hopefully will be used in the billion dollar company perfect match acc.
 #Written by Joshua Bird May 2018
 
+#Todo:
+#Make this whole thing way less convoluted, group things together that do the same thing
+#Define newest_date on page 1 only
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
@@ -56,14 +59,6 @@ c.execute("CREATE TABLE IF NOT EXISTS sequence_tracker\
           (name text, seq int)")
 c.execute("SELECT * FROM location_master_table")
 
-#Get Url
-print("\n" + "\n".join(str(s).replace("(", "").replace(")", "").replace("'", "").replace(",", "|") for s in c.fetchall()))  # Get location list
-dest_name = input("Select location name from list above:\n")
-page = "https://www.booking.com/searchresults.en-gb.html?lang=en-gb&ss={}".format(dest_name)
-c.execute("SELECT location_id FROM location_master_table WHERE location_name = '{}'".format(dest_name))
-location_id = int(c.fetchone()[0])
-print(location_id)
-
 
 #Set all variables to nothing to prevent previous hotel's info bleeding into next hotel
 def clearVariables():
@@ -91,6 +86,7 @@ def clearVariables():
     global no_reviews
     global no_element
     global newest_date
+    global target_index
 
     element = ""
     elements = ""
@@ -116,6 +112,7 @@ def clearVariables():
     no_reviews = False
     no_element = False
     newest_date = ""
+    target_index = None
 
 
 #Setup to get rid of the stupid emojies
@@ -127,8 +124,17 @@ emoji_pattern = re.compile("["
                            "]+", flags=re.UNICODE)
 
 #Get Url
+
+#Prompt for location
+print("\n" + "\n".join(str(s).replace("(", "").replace(")", "").replace("'", "").replace(",", "|") for s in c.fetchall()))  # Get location list
+dest_name = input("Select location name from list above:\n")
+page = "https://www.booking.com/searchresults.en-gb.html?lang=en-gb&ss={}".format(dest_name)
+c.execute("SELECT location_id FROM location_master_table WHERE location_name = '{}'".format(dest_name))
+location_id = int(c.fetchone()[0])
+print("Location id: " + str(location_id))
 print("Getting Urls")
 print("Page:")
+
 previous_urls = {}
 previous_urls = set()
 hotel_urls = []
@@ -169,8 +175,6 @@ print("New hotels in " + dest_name + " " + str(len(hotel_urls)))
 print("Repeat urls: " + str(repeat_url))
 
 #Get element from page with css selector function
-
-
 def getElement(name, css_selector):
     global driver
     global element
@@ -183,8 +187,6 @@ def getElement(name, css_selector):
         no_element = True
 
 #Get element from page with xpath function
-
-
 def getElementXpath(name, xpath):
     global driver
     global element
@@ -195,8 +197,6 @@ def getElementXpath(name, xpath):
         print("Failed to find " + name)
 
 #Get multiple elements from page with css selector function
-
-
 def getElements(name, css_selector):
     global driver
     global elements
@@ -210,8 +210,6 @@ def getElements(name, css_selector):
             no_reviews = True
 
 #Get multiple elements from page with xpath function
-
-
 def getElementsXpath(name, xpath):
     global driver
     global elements
@@ -221,18 +219,16 @@ def getElementsXpath(name, xpath):
     except BaseException:
         print("Failed to find " + name)
 
-
 #Main loop
 while(True):
     #startup stuff
-    conn.commit()
     clearVariables()
 
     if(page_num == 1):  # get the hotel name, rating, ect is only needed once
         hotel_url = hotel_urls[iteration]  # Gets the next hotel url
         hotel_name = hotel_url.split("?")[0].split("/")[-1]
         country_code = hotel_url.split("?")[0].split("/")[-2]
-        comment_url = "https://www.booking.com/reviews/" + country_code + "/hotel/" + hotel_name  # Splice hotel name onto url
+        comment_url = "https://www.booking.com/reviews/" + country_code + "/hotel/" + hotel_name + "?order=completed_desc" # Splice hotel name onto url
 
         driver.get(comment_url)  # Get Page
         getElement("hotel name", ".standalone_header_hotel_link")
@@ -273,7 +269,7 @@ while(True):
         else:
             print("hotel already in db")
             property_id = int(entry[0])
-            print(property_id)
+            print("Property_id: " + str(property_id))
 
         getElements("individual rating", "p.review_score_value")
         individual_ratings = [x.text for x in elements]
@@ -293,10 +289,9 @@ while(True):
 
         c.execute("SELECT date FROM unfiltered_guest_comments WHERE location_id = ? AND property_id = ?",
                   (location_id, property_id))  # Get all dates for the previous comments
-        newest_date = int(max([x[0] for x in c.fetchall()], default = 0))
+        newest_date = max([x[0] for x in c.fetchall()], default = None)
 
-    print(page_num)
-    print(newest_date)
+    print("Page: " + str(page_num))
 
     getElements("review date", "p.review_item_date")
     if no_reviews is False:  # If there are no reviews get them
@@ -313,17 +308,22 @@ while(True):
             reviewer_info[i].append(review_text[i])  # Add review text to the list
         elements = ""
 
-        reviewer_info.sort(reverse = True)
 
-        review_date = [x[0] for x in reviewer_info]
+        if newest_date: #If hotel is in db already then get rid of the comments already in the db
+            newest_date = int(newest_date)
+            review_date = [x[0] for x in reviewer_info]
+            try:
+                target_index = review_date.index(newest_date)
+            except ValueError:
+                if review_date[-1] > newest_date:
+                    target_index = 75
+                target_index = None
 
-        try:
-            target_index = review_date.index(newest_date)
-        except ValueError:
-            target_index = None
-
-        print("Added " + str(target_index) + " new comments")
-        reviewer_info[:target_index]
+            print("Added " + str(target_index) + " new comments")
+            reviewer_info = reviewer_info[:target_index]
+            num_of_reviews = len(reviewer_info)
+        else:
+            print("No comments in db")
 
 
         for a in range(0, num_of_reviews):
@@ -336,14 +336,17 @@ while(True):
 
     try:  # Try to get next page of reviews
         driver.find_element_by_css_selector("div.review_list_pagination:nth-child(4) > p:nth-child(2) > a:nth-child(1)").click()
-        if target_index:
-            page_num = 1
+        if target_index < 75: #If there are no new comments
+            print("Skipped other pages because already in db")
             iteration += 1
+            page_num = 1
+            conn.commit()
         else:
             page_num += 1  # Next page
     except BaseException:  # Move onto next page
-        page_num = 1
         iteration += 1
+        page_num = 1
+        conn.commit()
 
 c.close()
 conn.close()

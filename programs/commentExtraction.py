@@ -1,92 +1,33 @@
-import xlrd
-from xlwt import Workbook
+import sqlite3
+import pandas as pd
+import re
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from collections import defaultdict
 
 # Defining variables
-row = 1
-col = 9
-comment = []
+i = 0
 comments = []
-tmp_comment_list = []
+extracted_comments = []
 prox_comments = {}
+analyzer = SentimentIntensityAnalyzer()
 
-# Proximity to ski field
-prox1 = {"ski slope", "ski field", "lifts", "gondola"}
-prox2 = {"connect", "proximity", "minute", "walk", "locat", "bus", "close",
-        "shuttle", "meter", "metre", "mins", "min", "driving", "drive",
-        "access", "van", "nearby", "car", "distance", "easy to get to",
-        "convenient", "isolated", "steps away", "right on"}
-prox3 = {"ski in", "ski out"}
-prox4 = {"ski into"}
+#Sqlite setup
+conn = sqlite3.connect("/home/j_blrd/webscraping/database/database.db")
+c = conn.cursor()
+c.execute("CREATE TABLE IF NOT EXISTS filtered_guest_comments\
+          (location_id int, property_id int, criteria_id int, date int, comment text, vader_score real)")
 
-# Close to Restaurant and Shops
-clos1 = {"restaurant", "shops", "dining", "bars", "cafe", "village", "pub",
-        "main road"}
-clos2 = {"walk", "minute", "mins", "nearby", "distance", "locat",
-        "easy to get to", "metre", "meter", "street", "access", "min", "close",
-        "convenient", "isolated", "steps away", "central", "nearby",
-        "in the area", "proximity"}
+print(pd.read_sql_query("SELECT * FROM location_master_table", conn))
 
-# Peaceful and Tranquil Location
-peac1 = {"peaceful", "restful", "quiet", "serene", "tranquil"}
-peac2 = {"remote"}
-peac3 = {"location", "road"}
-peac4 = {"loud", "nois"}
-peac5 = {"sleep", "walls", "hallway", "next door", "woke", "wake", "groomers",
-        "machinery", "plow", "issue", "road", "room", "night", "evening",
-        "problem", "front"}
+dest_name = input("Select location name from list above:\n")
+c.execute("SELECT location_id FROM location_master_table WHERE location_name = ?", (dest_name,))
+location_id = int(c.fetchone()[0])
 
-# View
-view1 = {"view"} #And not "review"
+c.execute("SELECT criteria_id FROM location_criteria WHERE location_id = ?", (location_id,))
+criteria_ids = [x[0] for x in c.fetchall()] #This is the ids that we have to filter for
 
-# Onsen / Hot Spring Bath
-onse1 = {"onsen", "spa", "hot spring"}
-
-# Bar
-bar1 = {"bar"}
-bar2 = {"walking", "locat", "dessert", "expresso", "buffet", "bar fridge",
-        "snack bar", "next door", "mini"}
-
-# Wifi
-wifi1 = {"wifi", "wi-fi"}
-
-# Overall Guest Rating
-rate1 = {"overall", "but overall", "summary", "in summary"} #At start of sentence
-
-# Value for Money
-valu1 = {"value"}
-valu2 = {"restaurant", "bar", "massage", "food", "buffet", "value add", "meal",
-        "valued", "the value"}
-
-# Room and Bathroom Size
-size1 = {"tiny", "small", "large", "gigantic", "huge", "big"}
-size2 = {"room", "toilet", "shower", "bath"}
-
-# Breakfast
-brea1 = {"family friendly", "kids", "children", "families"}
-brea2 = {"love", "like", "enjoy", "easy", "popular", "beautiful", "lovely",
-        "suitable", "dangerous", "recommend", "fun", "delight",
-        "entertainment", "fantastic", "great", "glad", "relax", "ideal",
-        "perfect", "good", "nice", "comfortable", "sleep"}
-
-# Staff / Service
-staf1 = {"staff", "service"}
-sraf2 = {"bus service", "shuttle service", "taxi service", "self service",
-        "self-service", "a service", "this service", "room service",
-        "exchange service", "up service", "rental service", "dinner service",
-        "restaurant service", "service shop", "massage service", "off service",
-        "laundry service", "free service", "translation service",
-        "van service", "transport service", "services manager",
-        "service manager"}
-
-# Overall Comfort
-comf1 = ["comfortable"]
-
-# Excel spreadsheet setup
-wb = Workbook()
-workbook = xlrd.open_workbook(
-    "/home/j_blrd/webscraping/spreadsheets/comments.xls")
-data_sheet = wb.add_sheet("commentExtraction", cell_overwrite_ok=True)
-sheet = workbook.sheet_by_index(0)  # Open first sheet
+c.execute("SELECT property_name, property_id FROM property_master_table WHERE location_id = ?", (location_id,))
+hotel_list = [list(x) for x in c.fetchall()]
 
 def clearVariables():
     global comment
@@ -94,39 +35,162 @@ def clearVariables():
     global col
     global tmp_comment_list
 
-    comment = []
+    extracted_comments = []
     comments = []
     col = 9
     tmp_comment_list = []
 
+def listToDict(criteria_detail): #Turns list of lists into dictionary eg. [[1, slope], [2, ski]] to {1, [slope] 2, [ski]}
+    d = defaultdict(list)
+    for k, v in criteria_detail:
+        d[k].append(v)
+    return(d)
+
+def criteria(current_id):
+    temp_extracted_comments = []
+
+    c.execute("SELECT criteria_sub_id, criteria_detail FROM criteria_details WHERE criteria_id = ?", (current_id,))
+    criteria_detail = [list(x) for x in c.fetchall()]
+    criteria_detail = listToDict(criteria_detail)
+
+    for b in range(0, len(comments)):
+        if current_id == 1:
+            #If any of 1 and any of 2 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                if any(x in comments[b] for x in criteria_detail[2]):
+                    temp_extracted_comments.append(comments[b])
+            #If all of 3 in comment
+            elif all(x in comments[b] for x in criteria_detail[3]):
+                temp_extracted_comments.append(comments[b])
+            #if 4 in comment
+            elif all(x in comments[b] for x in criteria_detail[4]):
+                temp_extracted_comments.append(comments[b])
+
+        if current_id == 2:
+            #If any of 1 and any of 2 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                if any(x in comments[b] for x in criteria_detail[2]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 3:
+            #If any of 1 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+            #If any of 2 and 3 in comment
+            if any(x in comments[b] for x in criteria_detail[2]):
+                if any(x in comments[b] for x in criteria_detail[3]):
+                    temp_extracted_comments.append(comments[b])
+            #If any of 4 and 5 in comment
+            if any(x in comments[b] for x in criteria_detail[4]):
+                if any(x in comments[b] for x in criteria_detail[5]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 4:
+            #If 1 in comment and 2 not in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                if (x not in comments[b] for x in criteria_detail[2]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 5:
+            #If any of 1 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+
+        if current_id == 6:
+            #If any of 1 in comment and none of 2 not in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                if all(x not in comments[b] for x in criteria_detail[2]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 7:
+            #If any of 1 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+
+        if current_id == 8:
+            #If any of 1 is at the start of the comment
+            if any(comments[b].startswith(x) for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+
+        if current_id == 9:
+            #If any of 1 in comment and all of 2 not in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                if all(x not in comments[b] for x in criteria_detail[2]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 10:
+            #If any of 1 or any of 2 and any of 3 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+            if any(x in comments[b] for x in criteria_detail[2]):
+                if any(x in comments[b] for x in criteria_detail[3]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 11:
+            #If any of 1 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+
+        if current_id == 12:
+            #If any of 1 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+
+        if current_id == 13:
+            #If any of 1 and none of 2 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                if all(x not in comments[b] for x in criteria_detail[2]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 14:
+            #If any of 1 in comment or any of 2 and any of 3 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+            if any(x in comments[b] for x in criteria_detail[2]):
+                if any(x in comments[b] for x in criteria_detail[3]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 15:
+            #If any of 1 in comment or any of 2 and none of 3 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+            if any(x in comments[b] for x in criteria_detail[2]):
+                if all(x not in comments[b] for x in criteria_detail[3]):
+                    temp_extracted_comments.append(comments[b])
+
+        if current_id == 16:
+            #If any of 1 in comment
+            if any(x in comments[b] for x in criteria_detail[1]):
+                temp_extracted_comments.append(comments[b])
+
+    temp_extracted_comments = [x.split(" || ") for x in temp_extracted_comments]
+    [x.extend([location_id, property_id, current_id]) for x in temp_extracted_comments]
+    [x.append(analyzer.polarity_scores(x[0])['compound']) for x in temp_extracted_comments]
+    extracted_comments.extend(temp_extracted_comments)
+
+
 while True:
-    print("\n", row)
+    print(str(hotel_list[i][1]) + ": " + hotel_list[i][0]) #Prints hotel name and property_id
+    property_id = int(hotel_list[i][1])
+    c.execute("SELECT comment, date FROM unfiltered_guest_comments WHERE location_id = ? and property_id = ?",\
+              (location_id, property_id,))
+    entry = c.fetchall()
+    #comments = [[item] for sublist in [list(x)[0].split(".") for x in entry] for item in sublist]
+    comments = [list(x)[0].split(".") for x in entry] #Get comments from db
+    dates = [list(x)[1] for x in entry]
+    comments = [[item + " || " + dates[x] for item in comments[x]] for x in range(1, len(comments))] #Add date to end of every sentence
+    comments = [x for sublist in comments for x in sublist] #Turn list of lists into flat list
+    for x in criteria_ids:
+        criteria(x)
 
-    hotel_name = sheet.cell_value(row, 0)
-    print(hotel_name)
+    for s in extracted_comments:
+        print(*s)
 
-    if sheet.cell_type(row, col) in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
-        row += 1
-        continue
-
-    while True:
-        if col == sheet.ncols or sheet.cell_type(row, col) in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
-            break
-
-        comment = sheet.cell_value(row, col).split("||")[7].split(".") #Gets the actual comment from the spreadsheet and seperates the sentences
-        comments.append(comment)
-        col += 1
-
-    comments = [element for sublist in comments for element in sublist] #Not really sure how this works but it makes a list of lists into a list
-#    print(comments)
-
-    for i in range(0, len(comments)): #Repeat for each comment in the list
-        if any(word in comments[i] for word in prox1):
-            if any(x in comments[i] for x in prox2):
-                tmp_comment_list.append(comments[i])
-
-    prox_comments[hotel_name] = tmp_comment_list
-
-    row +=1
-    clearVariables()
-    print(prox_comments)
+    for x in range(0, len(extracted_comments)):
+        c.execute("INSERT INTO filtered_guest_comments (comment, date, location_id, property_id, criteria_id, vader_score) \
+                  VALUES(?, ?, ?, ?, ?, ?)", \
+                  (extracted_comments[x][0], extracted_comments[x][1], extracted_comments[x][2], \
+                   extracted_comments[x][3], extracted_comments[x][4], extracted_comments[x][5]))
+    conn.commit()
+    i += 1
+    break
