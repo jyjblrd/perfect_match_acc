@@ -1,8 +1,12 @@
 import sqlite3
 import pandas as pd
 import re
+import time
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from collections import defaultdict
+from multiprocessing import Process, Pool
+
+start_time = time.time()
 
 # Defining variables
 i = 0
@@ -29,6 +33,17 @@ criteria_ids = [x[0] for x in c.fetchall()] #This is the ids that we have to fil
 c.execute("SELECT property_name, property_id FROM property_master_table WHERE location_id = ?", (location_id,))
 hotel_list = [list(x) for x in c.fetchall()]
 
+def runInParallel(function, iteration):
+    proc = []
+
+    for x in iteration:
+        p = Process(target = function(x))
+        p.start()
+        proc.append(p)
+    for p in proc:
+        p.join()
+
+print(str(len(hotel_list)) + " Hotels in " + dest_name)
 def clearVariables():
     global comment
     global comments
@@ -169,7 +184,7 @@ def criteria(current_id):
     extracted_comments.extend(temp_extracted_comments)
 
 
-while True:
+for i in range(0, len(hotel_list)):
     print(str(hotel_list[i][1]) + ": " + hotel_list[i][0]) #Prints hotel name and property_id
     property_id = int(hotel_list[i][1])
     c.execute("SELECT comment, date FROM unfiltered_guest_comments WHERE location_id = ? and property_id = ?",\
@@ -180,17 +195,19 @@ while True:
     dates = [list(x)[1] for x in entry]
     comments = [[item + " || " + dates[x] for item in comments[x]] for x in range(1, len(comments))] #Add date to end of every sentence
     comments = [x for sublist in comments for x in sublist] #Turn list of lists into flat list
+    #pool.map(criteria, criteria_ids)
+    #runInParallel(criteria, [0,1,2,3,4])
     for x in criteria_ids:
-        criteria(x)
+       criteria(x)
 
-    for s in extracted_comments:
-        print(*s)
+#for s in extracted_comments:
+#    print(*s)
 
-    for x in range(0, len(extracted_comments)):
-        c.execute("INSERT INTO filtered_guest_comments (comment, date, location_id, property_id, criteria_id, vader_score) \
-                  VALUES(?, ?, ?, ?, ?, ?)", \
-                  (extracted_comments[x][0], extracted_comments[x][1], extracted_comments[x][2], \
-                   extracted_comments[x][3], extracted_comments[x][4], extracted_comments[x][5]))
-    conn.commit()
-    i += 1
-    break
+for x in range(0, len(extracted_comments)):
+    c.execute("INSERT INTO filtered_guest_comments (comment, date, location_id, property_id, criteria_id, vader_score) \
+                VALUES(?, ?, ?, ?, ?, ?)", \
+                (extracted_comments[x][0], extracted_comments[x][1], extracted_comments[x][2], \
+                extracted_comments[x][3], extracted_comments[x][4], extracted_comments[x][5]))
+conn.commit()
+print(time.time() - start_time)
+

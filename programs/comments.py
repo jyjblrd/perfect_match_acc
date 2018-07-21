@@ -57,6 +57,10 @@ c.execute("CREATE TABLE IF NOT EXISTS property_master_table\
           (location_id int, property_id int, property_name text, property_webadress text, hotel, self_contained)")
 c.execute("CREATE TABLE IF NOT EXISTS sequence_tracker\
           (name text, seq int)")
+c.execute("CREATE TABLE IF NOT EXISTS property_guest_scores\
+          (location_id int, property_id int, review_site_id int, no_reviews int, \
+          overall real, cleanliness real, comfort real, condition real, facilities real, location real, rooms real, \
+          sleep_quality real, staff_service real, value real, wifi real)")
 c.execute("SELECT * FROM location_master_table")
 
 
@@ -271,21 +275,22 @@ while(True):
             property_id = int(entry[0])
             print("Property_id: " + str(property_id))
 
-        getElements("individual rating", "p.review_score_value")
-        individual_ratings = [x.text for x in elements]
-        if(len(individual_ratings) == 8):
-            pass  # ToDo: add this to the database
+        getElements("ratings", "p.review_score_value")
+        ratings = [x.text for x in elements]
+        ratings.append(overall_rating)
+        if len(ratings) == 8:
+            c.execute("INSERT INTO property_guest_scores \
+                      (location_id, property_id, review_site_id, cleanliness, comfort, location, facilities, \
+                      staff_service, value, wifi, overall) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+                      (location_id, property_id, 1, ratings[0], ratings[1], ratings[2], ratings[3], ratings[4], \
+                       ratings[5], ratings[6], ratings[7]))
 
-        elif(len(individual_ratings) == 7):  # Some hotels dont have a wifi score
-            pass
-            #ToDo: same as above
-            #print("no wifi score")
-            #c.executemany("INSERT INTO comments \
-            #    (hotel_name, overall, cleanliness, comfort, location, facilities, staff, value) \
-            #    VALUES (?, ?, ?, ?, ?, ?, ?, ?)", individual_ratings)
-
-        #print(individual_ratings) #Debugging only, slows down program a bit
-        elements = ""
+        elif len(ratings) == 7:
+            c.execute("INSERT INTO property_guest_scores \
+                      (location_id, property_id, review_site_id, cleanliness, comfort, location, facilities, \
+                      staff_service, value, overall) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+                      (location_id, property_id, 1, ratings[0], ratings[1], ratings[2], ratings[3], ratings[4], \
+                       ratings[5], ratings[6]))
 
         c.execute("SELECT date FROM unfiltered_guest_comments WHERE location_id = ? AND property_id = ?",
                   (location_id, property_id))  # Get all dates for the previous comments
@@ -329,10 +334,7 @@ while(True):
         for a in range(0, num_of_reviews):
             c.execute("INSERT INTO unfiltered_guest_comments (location_id, property_id, date, comment) VALUES(?, ?, ?, ?)",
                       (location_id, property_id, reviewer_info[a][0], reviewer_info[a][1]))
-#            c.execute("INSERT INTO unfiltered_guest_comments (
-#            print(reviewer_info[a]) #Print collected data (for debugging only. Slows down program because it has to print so much
 
-        #c.executemany("INSERT INTO comments VALUES (
 
     try:  # Try to get next page of reviews
         driver.find_element_by_css_selector("div.review_list_pagination:nth-child(4) > p:nth-child(2) > a:nth-child(1)").click()
@@ -347,7 +349,6 @@ while(True):
         iteration += 1
         page_num = 1
         conn.commit()
-
 c.close()
 conn.close()
 driver.quit()
